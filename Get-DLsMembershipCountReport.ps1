@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # Get-GroupMemberReport.ps1
 # Distribution List / M365 Groups Member Count Report
 # 
@@ -66,7 +66,7 @@ if ($TestLimit -gt 0) {
     
     Write-Host "  Fetching up to $fetchLimit groups (optimized for TestLimit)..." -ForegroundColor Yellow
     
-    $allGroups = Get-MgGroup -Filter "mailEnabled eq true and securityEnabled eq false" `
+    $allGroups = Get-MgGroup -Filter "mailEnabled eq true or securityEnabled eq true" `
                              -Top $fetchLimit `
                              -Property Id, DisplayName, Mail, GroupTypes `
                              -ConsistencyLevel eventual
@@ -74,7 +74,7 @@ if ($TestLimit -gt 0) {
 else {
     Write-Host "  Fetching all groups..." -ForegroundColor Gray
     
-    $allGroups = Get-MgGroup -Filter "mailEnabled eq true and securityEnabled eq false" `
+    $allGroups = Get-MgGroup -Filter "mailEnabled eq true or securityEnabled eq true" `
                              -All `
                              -Property Id, DisplayName, Mail, GroupTypes `
                              -ConsistencyLevel eventual
@@ -151,7 +151,7 @@ foreach ($group in $groupsToProcess) {
             GroupType          = $group.GroupType
             Members            = $memberCount
             "Empty"            = if ($memberCount -eq 0) { "yes" } else { "no" }
-            "Size_1-10"             = if ($memberCount -ge 1 -and $memberCount -le 10) { "yes" } else { "no" }
+            "Size_1-10"        = if ($memberCount -ge 1 -and $memberCount -le 10) { "yes" } else { "no" }
             "11-100"           = if ($memberCount -ge 11 -and $memberCount -le 100) { "yes" } else { "no" }
             "101-200"          = if ($memberCount -ge 101 -and $memberCount -le 200) { "yes" } else { "no" }
             "201-500"          = if ($memberCount -ge 201 -and $memberCount -le 500) { "yes" } else { "no" }
