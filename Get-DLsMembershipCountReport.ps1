@@ -66,7 +66,7 @@ if ($TestLimit -gt 0) {
     
     Write-Host "  Fetching up to $fetchLimit groups (optimized for TestLimit)..." -ForegroundColor Yellow
     
-    $allGroups = Get-MgGroup -Filter "mailEnabled eq true or securityEnabled eq true" `
+    $allGroups = Get-MgGroup -Filter "mailEnabled eq true" `
                              -Top $fetchLimit `
                              -Property Id, DisplayName, Mail, GroupTypes `
                              -ConsistencyLevel eventual
@@ -74,7 +74,7 @@ if ($TestLimit -gt 0) {
 else {
     Write-Host "  Fetching all groups..." -ForegroundColor Gray
     
-    $allGroups = Get-MgGroup -Filter "mailEnabled eq true or securityEnabled eq true" `
+    $allGroups = Get-MgGroup -Filter "mailEnabled eq true" `
                              -All `
                              -Property Id, DisplayName, Mail, GroupTypes `
                              -ConsistencyLevel eventual
