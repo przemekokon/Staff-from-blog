@@ -7,6 +7,7 @@
 #   .\Get-GroupMemberReport.ps1 -M365                # Only Microsoft 365 Groups
 #   .\Get-GroupMemberReport.ps1 -All                 # Both DLs and M365 Groups
 #   .\Get-GroupMemberReport.ps1 -DL -TestLimit 100   # Test with first ~100 DLs
+#   .\Get-GroupMemberReport.ps1 -M365 -TestLimit 100 # Test with first ~100 M365
 # =============================================================================
 
 [CmdletBinding(DefaultParameterSetName = 'DL')]
@@ -244,3 +245,4 @@ $validResults |
     }
 
 Write-Host ""
+
