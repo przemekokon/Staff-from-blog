@@ -49,17 +49,25 @@ catch {
 
 # --- Read UPNs from file, skip empty lines ---
 $upnList = Get-Content $FilePath | Where-Object { $_.Trim() -ne "" }
-Write-Host "Users to process: $($upnList.Count)`n" -ForegroundColor Cyan
+$total   = $upnList.Count
+Write-Host "Users to process: $total`n" -ForegroundColor Cyan
 
 # --- Counters for summary ---
 $added    = 0
 $skipped  = 0
 $notFound = 0
+$index    = 0
 
 foreach ($entry in $upnList) {
 
+    $index++
     $entry = $entry.Trim()
     $user  = $null
+
+    # Update progress bar
+    Write-Progress -Activity "Adding users to: $($group.DisplayName)" `
+                   -Status "Processing $index of $total : $entry" `
+                   -PercentComplete (($index / $total) * 100)
 
     # Step 1: Try to resolve user by UPN
     $user = Get-MgUser -UserId $entry -ErrorAction SilentlyContinue
@@ -99,6 +107,9 @@ foreach ($entry in $upnList) {
         $notFound++
     }
 }
+
+# --- Clear progress bar after completion ---
+Write-Progress -Activity "Adding users to: $($group.DisplayName)" -Completed
 
 # --- Summary ---
 Write-Host "`n--- Summary ---" -ForegroundColor Cyan
