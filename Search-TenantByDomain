@@ -1,0 +1,159 @@
+<#
+.SYNOPSIS
+    Searches an Entra ID tenant for all objects associated with a given domain.
+
+.DESCRIPTION
+    Fetches users, groups, app registrations, and enterprise apps into memory (once),
+    then lets you search any domain locally — no repeated API calls.
+    Useful for domain decommissioning, audits, or tenant cleanup.
+
+.PARAMETER Domain
+    The domain to search for, e.g. "contoso.com"
+
+.EXAMPLE
+    Search-Domain "contoso.com"
+
+.NOTES
+    Required scopes: User.Read.All, Group.Read.All, Application.Read.All, Directory.Read.All
+    Author: Claude
+    Blog post: https://somethingwentwrong.dev/posts/search-tenant-by-domain
+#>
+
+# ============================================================
+# PHASE 1: CONNECT AND DEFINE SCOPES
+# ============================================================
+# We need broad read permissions to pull users, groups, and apps
+Connect-MgGraph -Scopes @(
+    "User.Read.All",
+    "Group.Read.All",
+    "Application.Read.All",
+    "Directory.Read.All"
+)
+
+# ============================================================
+# PHASE 2: FETCH EVERYTHING INTO MEMORY
+# ============================================================
+# This is the "expensive" part — we do it once and reuse the data.
+# -All parameter handles pagination automatically (important for large tenants).
+
+Write-Host "Fetching users..." -ForegroundColor Cyan
+$allUsers = Get-MgUser -All `
+    -Select "id,displayName,userPrincipalName,mail,proxyAddresses,imAddresses" `
+    -ConsistencyLevel eventual -CountVariable userCount
+Write-Host "  -> $($allUsers.Count) users loaded"
+
+Write-Host "Fetching groups (M365, DLs, Security, Mail-Enabled Security)..." -ForegroundColor Cyan
+$allGroups = Get-MgGroup -All `
+    -Select "id,displayName,mail,proxyAddresses,groupTypes,mailEnabled,securityEnabled,description"
+Write-Host "  -> $($allGroups.Count) groups loaded"
+
+Write-Host "Fetching app registrations..." -ForegroundColor Cyan
+$allApps = Get-MgApplication -All `
+    -Select "id,displayName,web,spa,publicClient,identifierUris,signInAudience"
+Write-Host "  -> $($allApps.Count) apps loaded"
+
+Write-Host "Fetching service principals (Enterprise Apps)..." -ForegroundColor Cyan
+$allServicePrincipals = Get-MgServicePrincipal -All `
+    -Select "id,displayName,servicePrincipalType,replyUrls,homepage,loginUrl,samlMetadataUrl"
+Write-Host "  -> $($allServicePrincipals.Count) service principals loaded"
+
+# ============================================================
+# PHASE 3: SEARCH FUNCTION — REUSABLE FOR ANY DOMAIN
+# ============================================================
+# Now the fun part: a single function that filters everything locally.
+# No more API calls needed — just string matching in memory.
+
+function Search-Domain {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Domain
+    )
+
+    $domainPattern = "*@$Domain*"
+    $urlPattern = "*$Domain*"
+
+    Write-Host "`n========== Results for: $Domain ==========" -ForegroundColor Green
+
+    # --- USERS ---
+    # Check UPN, Mail, and all proxyAddresses for the domain
+    $matchedUsers = $allUsers | Where-Object {
+        $_.UserPrincipalName -like $domainPattern -or
+        $_.Mail -like $domainPattern -or
+        ($_.ProxyAddresses -join ';') -like $urlPattern
+    } | Select-Object DisplayName, UserPrincipalName, Mail,
+        @{N='Aliases'; E={
+            ($_.ProxyAddresses | Where-Object { $_ -like "smtp:*@$Domain" }) -replace '^smtp:','' -join '; '
+        }}
+
+    Write-Host "`n[USERS] $($matchedUsers.Count) found" -ForegroundColor Yellow
+    if ($matchedUsers) { $matchedUsers | Format-Table -AutoSize }
+
+    # --- GROUPS ---
+    # Groups also have proxyAddresses (DLs, M365 groups, mail-enabled security groups)
+    # We add a "Type" column so you know what you're looking at
+    $matchedGroups = $allGroups | Where-Object {
+        $_.Mail -like $domainPattern -or
+        ($_.ProxyAddresses -join ';') -like $urlPattern
+    } | Select-Object DisplayName, Mail,
+        @{N='Type'; E={
+            if ($_.GroupTypes -contains 'Unified')      { 'M365 Group' }
+            elseif ($_.MailEnabled -and $_.SecurityEnabled) { 'Mail-Enabled Security' }
+            elseif ($_.MailEnabled)                      { 'Distribution List' }
+            elseif ($_.SecurityEnabled)                  { 'Security Group' }
+            else                                         { 'Other' }
+        }},
+        @{N='Aliases'; E={
+            ($_.ProxyAddresses | Where-Object { $_ -like "smtp:*@$Domain" }) -replace '^smtp:','' -join '; '
+        }}
+
+    Write-Host "`n[GROUPS] $($matchedGroups.Count) found" -ForegroundColor Yellow
+    if ($matchedGroups) { $matchedGroups | Format-Table -AutoSize }
+
+    # --- APP REGISTRATIONS ---
+    # Check redirect URIs (web, SPA, public client) and identifier URIs for the domain
+    $matchedApps = $allApps | Where-Object {
+        ($_.Web.RedirectUris -join ';') -like $urlPattern -or
+        ($_.Spa.RedirectUris -join ';') -like $urlPattern -or
+        ($_.PublicClient.RedirectUris -join ';') -like $urlPattern -or
+        ($_.IdentifierUris -join ';') -like $urlPattern
+    } | Select-Object DisplayName,
+        @{N='MatchedURLs'; E={
+            $urls = @()
+            $urls += $_.Web.RedirectUris | Where-Object { $_ -like $urlPattern }
+            $urls += $_.Spa.RedirectUris | Where-Object { $_ -like $urlPattern }
+            $urls += $_.PublicClient.RedirectUris | Where-Object { $_ -like $urlPattern }
+            $urls += $_.IdentifierUris | Where-Object { $_ -like $urlPattern }
+            $urls -join '; '
+        }}
+
+    Write-Host "`n[APP REGISTRATIONS] $($matchedApps.Count) found" -ForegroundColor Yellow
+    if ($matchedApps) { $matchedApps | Format-Table -AutoSize -Wrap }
+
+    # --- SERVICE PRINCIPALS (Enterprise Apps) ---
+    # Check replyUrls, homepage, loginUrl for the domain
+    $matchedSPs = $allServicePrincipals | Where-Object {
+        ($_.ReplyUrls -join ';') -like $urlPattern -or
+        $_.Homepage -like $urlPattern -or
+        $_.LoginUrl -like $urlPattern
+    } | Select-Object DisplayName, ServicePrincipalType,
+        @{N='MatchedURLs'; E={
+            $urls = @()
+            $urls += $_.ReplyUrls | Where-Object { $_ -like $urlPattern }
+            if ($_.Homepage -like $urlPattern) { $urls += $_.Homepage }
+            if ($_.LoginUrl -like $urlPattern) { $urls += $_.LoginUrl }
+            $urls -join '; '
+        }}
+
+    Write-Host "`n[ENTERPRISE APPS] $($matchedSPs.Count) found" -ForegroundColor Yellow
+    if ($matchedSPs) { $matchedSPs | Format-Table -AutoSize -Wrap }
+
+    # --- SUMMARY ---
+    Write-Host "`n--- SUMMARY for $Domain ---" -ForegroundColor Cyan
+    Write-Host "  Users:           $($matchedUsers.Count)"
+    Write-Host "  Groups/DLs:      $($matchedGroups.Count)"
+    Write-Host "  App Regs:        $($matchedApps.Count)"
+    Write-Host "  Enterprise Apps: $($matchedSPs.Count)"
+    Write-Host "  TOTAL objects:   $($matchedUsers.Count + $matchedGroups.Count + $matchedApps.Count + $matchedSPs.Count)"
+}
+
+Search-Domain <Domain>
