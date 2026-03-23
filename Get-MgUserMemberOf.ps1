@@ -37,10 +37,7 @@ $reportPath = Join-Path $scriptPath "UserGroupMemberships_$timestamp.csv"
 
 # Groups to exclude from the report (matched by DisplayName, case-insensitive)
 $excludedGroups = @(
-    'ZoomAddIn_AllUsers'
-    'ZoomAddIn_AllUsersExcept'
     'Tenant Guests'
-    'WTA - External Users - 01'
 )
 
 # -----------------------------------------------------------------------------
