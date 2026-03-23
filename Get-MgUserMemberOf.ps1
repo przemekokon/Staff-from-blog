@@ -4,6 +4,8 @@
 # Reads UPNs from a text file, fetches group memberships for each user
 # via Microsoft Graph, and exports a flat CSV report.
 #
+# Check line 40 for exclusions.
+#
 # Input:
 #   - users.txt (one UPN per line, same directory as script)
 #
